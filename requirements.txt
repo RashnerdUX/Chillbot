@@ -1,0 +1,9 @@
+uv
+fastapi
+pydantic
+sqlalchemy
+aiohttp
+redis
+telethon
+python-dotenv
+solana
