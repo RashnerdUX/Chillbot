@@ -28,5 +28,6 @@ class TokenAlert(BaseModel):
     token_symbol: str | None = None
     source_chat: str
     message_text: str
+    confidence_score: float = Field(..., ge=0.0, le=1.0)
     timestamp: datetime
 
