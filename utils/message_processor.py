@@ -35,3 +35,11 @@ class MessageProcessor:
             self.logger.info("No contract address found in the message.")
             return None
 
+if __name__ == "__main__":
+    processor = MessageProcessor()
+    test_message = "New token launch! Check out the contract at 0x1234567890abcdef1234567890abcdef12345678"
+    alert = processor.extract_contract_address(test_message, "TestChat")
+    if alert:
+        print(f"Extracted Alert: {alert}")
+    else:
+        print("No alert extracted.")
