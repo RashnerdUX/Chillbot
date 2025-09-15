@@ -1,0 +1,40 @@
+{
+  "version": "0.1.0",
+  "name": "metaplex_token_metadata",
+  "instructions": [],
+  "accounts": [
+    {
+      "name": "Metadata",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "key", "type": "u8" },
+          { "name": "updateAuthority", "type": "pubkey" },
+          { "name": "mint", "type": "pubkey" },
+          { "name": "name", "type": "string" },
+          { "name": "symbol", "type": "string" },
+          { "name": "uri", "type": "string" },
+          { "name": "sellerFeeBasisPoints", "type": "u16" },
+          { "name": "creators", "type": { "option": { "vec": "Creator" } } },
+          { "name": "primarySaleHappened", "type": "bool" },
+          { "name": "isMutable", "type": "bool" },
+          { "name": "editionNonce", "type": { "option": "u8" } },
+          { "name": "tokenStandard", "type": { "option": "u8" } }
+        ]
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "Creator",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "address", "type": "pubkey" },
+          { "name": "verified", "type": "bool" },
+          { "name": "share", "type": "u8" }
+        ]
+      }
+    }
+  ]
+}
