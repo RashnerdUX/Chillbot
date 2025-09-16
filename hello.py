@@ -4,8 +4,8 @@ from telethon import TelegramClient
 
 dotenv.load_dotenv()
 
-API_ID = os.getenv("API_ID")
-API_HASH = os.getenv("API_HASH")
+API_ID = os.getenv("TELEGRAM_API_ID")
+API_HASH = os.getenv("TELEGRAM_API_HASH")
 
 print(f"Using API_ID: {API_ID}")
 print(type(API_ID))

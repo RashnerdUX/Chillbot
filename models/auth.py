@@ -54,3 +54,14 @@ class Settings(BaseModel):
     target_roi: float
     stop_loss: float
 
+class TelegramChatID(BaseModel):
+    """
+    TelegramChatID model for representing a Telegram chat ID associated with a user.
+
+    Args:
+        BaseModel (pydantic.BaseModel): Base model class from Pydantic.
+    """
+    user_id: int  # This is the foreign key
+    chat_name: str  # Name of the Telegram chat
+    chat_id: int  # Telegram chat ID
+
