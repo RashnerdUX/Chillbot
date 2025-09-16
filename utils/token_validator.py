@@ -210,26 +210,30 @@ class TokenValidator:
     
     async def check_honeypot(self, mint_address: str) -> Dict:
         """Check for honeypot characteristics"""
-        
+
+        """  
+                TODO: Additional checks can be implemented here as later on          
+                # 3. Check for excessive taxes
+                
+                # 4. Check holder distribution
+                
+                # 5. Check for blacklist function
+        """   
         try:
             #1. use Rugcheck API to check for any risks
             rugcheck = self.get_rugcheck_report_summary(mint_address)
+            # If Rugcheck indicates that the token is risky, we flag it as a honeypot
+            if rugcheck.get("risk") == "danger":
+                return {"is_honeypot": True, "reason": "High risk of rugpull from Rugcheck", "report": rugcheck.get("report")}
+            
+            # 2. If the rugcheck score isn't low then we simulate swaps to confirm
             if rugcheck.get("risk") != "low":
-                # 2. If the rugcheck score isn't low then we simulate swaps to confirm
                 simulation = await self.simulate_swap(mint_address, 0.1)
                 # If either buy or sell fails, it's a honeypot
                 if not (simulation.get("buy_success") and simulation.get("sell_success")):
                     return {"is_honeypot": True, "reason": "Swap simulation failed"}
-            
-            """  
-            TODO: Additional checks can be implemented here as later on          
-            # 3. Check for excessive taxes
-            
-            # 4. Check holder distribution
-            
-            # 5. Check for blacklist function
-            """
-            return {"is_honeypot": False, "reason": "No honeypot characteristics detected"}     
+                
+            return {"is_honeypot": False, "reason": "No honeypot characteristics detected"}  
         except Exception as e:
             logging.error(f"Honeypot check error: {e}")
             return {"is_honeypot": True, "reason": "Failed to verify trading safety"}
@@ -288,15 +292,19 @@ class TokenValidator:
                     return {"risk": "high", "reason": "High risk score from Rugcheck", "report": data}
                 
                 if len(data.get("risks")) > 0:
-                    if any(risk.get("severity") == "high" for risk in data.get("risks", [])):
+                    if any(risk.get("level") == "danger" for risk in data.get("risks", [])):
+                        return {"risk": "danger", "reason": "Token is at high risk of being rugged", "report": data}
+
+                    if any(risk.get("level") == "high" for risk in data.get("risks", [])):
                         return {"risk": "high", "reason": "High severity risks from Rugcheck", "report": data}
 
-                    if any(risk.get("severity") == "medium" for risk in data.get("risks", [])):
+                    if any(risk.get("level") == "medium" for risk in data.get("risks", [])):
                         return {"risk": "medium", "reason": "Medium severity risks from Rugcheck", "report": data}
 
-                    if any(risk.get("severity") == "low" for risk in data.get("risks", [])):
+                    if any(risk.get("level") == "low" for risk in data.get("risks", [])):
                         return {"risk": "low", "reason": "Low severity risks from Rugcheck", "report": data}
 
+                # TODO: Consider checking the percentage of liquidity locked to influence risk level
                 return {"risk": "low", "reason": "Low risk score from Rugcheck", "report": data}
         except Exception as e:
             logging.error(f"Was unable to retrieve token report summary for {mint_address}, this is the error: {e}")
@@ -394,8 +402,9 @@ if __name__ == "__main__":
     validator = TokenValidator("https://api.mainnet-beta.solana.com")
     
     print("Running validate_token...")
-    test_contract = "V5cCiSixPLAiEDX2zZquT5VuLm4prr5t35PWmjNpump"
+    test_contract = "p729BHZT7ERtmNKV7k6R7fqivD2obyW6C4XTXa1pump"
     print(f"Validating token: {test_contract}")
+    # result_sync = validator.get_rugcheck_report_summary(test_contract)
     result = asyncio.run(validator.validate_token(test_contract))
     print("Result:")
     print(result)
