@@ -7,7 +7,7 @@ from anchorpy import Provider, Program, Idl
 from typing import Optional, Dict
 import base58
 import struct
-from models.tokens import TokenMetadata, LiquidityInfo
+from models.tokens import TokenMetadata, LiquidityInfo, RouteInfo
 from pathlib import Path
 import requests
 import logging
@@ -22,7 +22,10 @@ RISK_THRESHOLD = 0.7  # Example threshold for risk score
 class TokenValidator:
     def __init__(self, rpc_url: str):
         self.client = Client(rpc_url)
-        self.jupiter_api = "https://price.jup.ag/v4"
+        self.sol_mint = "So11111111111111111111111111111111111111112"
+        self.jupiter_api = "https://lite-api.jup.ag/price/v3"
+        self.jupiter_quote_api = "https://quote-api.jup.ag/v6/quote"
+        self.rugcheck_api = "https://api.rugcheck.xyz/v1"
         """self.metaplex_program_id = Pubkey.from_string("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s")
         # TODO: Provider is currently in read-only mode; for transactions, a wallet is needed.
         self.provider = Provider.readonly(self.client)
@@ -79,9 +82,7 @@ class TokenValidator:
                 results["liquidity"] = liquidity
                 results["checks"]["has_liquidity"] = True
                 
-                # Check minimum liquidity
-                if liquidity.liquidity_usd < 10000:
-                    results["warnings"].append(f"Low liquidity: ${liquidity.liquidity_usd:.2f}")
+                # TODO: Add functionality to LiquidityInfo model to check minimum liquidity
             else:
                 results["warnings"].append("No liquidity found")
                 results["checks"]["has_liquidity"] = False
@@ -152,108 +153,155 @@ class TokenValidator:
             return None
     
     async def check_liquidity(self, mint_address: str) -> Optional[LiquidityInfo]:
-        """Check liquidity across DEXs"""
+        """Check liquidity across DEXs using Jupiter as primary source."""
+        input_amount_sol = 0.1  # Amount of SOL to simulate swap
+        slippage_threshold = 0.5  # 0.5% acceptable slippage
+        amount_lamports = int(input_amount_sol * 1_000_000_000)  # 1 SOL = 1e9 lamports
+
+        params = {
+            "inputMint": self.sol_mint,
+            "outputMint": mint_address,
+            "amount": amount_lamports,
+            "slippageBps": int(slippage_threshold * 100),  # bps = % * 100
+        }
+
         try:
-            # Check Jupiter for price and liquidity
-            response = await self.fetch_jupiter_price(mint_address)
-            
-            if response:
-                return LiquidityInfo(
-                    pool_address=response.get('pool_address', ''),
-                    dex=response.get('dex', 'Unknown'),
-                    liquidity_usd=response.get('liquidity_usd', 0),
-                    volume_24h=response.get('volume_24h', 0),
-                    price_usd=response.get('price', 0),
-                    mcap=response.get('market_cap', 0)
-                )
-            
-            # Fallback to Raydium check
-            # TODO: Implement Raydium liquidity check if Jupiter fails
-            # return await self.check_raydium_pools(mint_address)
-            
-        except Exception as e:
-            logging.error(f"Error checking liquidity: {e}")
-            return None
-        
-    async def fetch_jupiter_price(self, mint_address: str) -> Optional[Dict]:
-        """Fetch price and liquidity info from Jupiter API"""
-        try:
-            url = f"{self.jupiter_api}/tokens/{mint_address}"
-            response = requests.get(url)
+            JUPITER_QUOTE_API = "https://quote-api.jup.ag/v6/quote"
+            response = requests.get(JUPITER_QUOTE_API, params=params)
+
             if response.status_code == 200:
                 data = response.json()
-                if data and 'data' in data and len(data['data']) > 0:
-                    token_data = data['data'][0]
-                    return {
-                        "pool_address": token_data.get("poolAddress", ""),
-                        "dex": "Jupiter",
-                        "liquidity_usd": token_data.get("liquidityUSD", 0),
-                        "volume_24h": token_data.get("volume24hUSD", 0),
-                        "price": token_data.get("priceUSD", 0),
-                        "market_cap": token_data.get("marketCapUSD", 0)
-                    }
+                print(f"Jupiter quote response for {mint_address}: {response.text}")
+
+                # Build route info for LiquidityInfo model
+                dex_routes = []
+                for route in data.get("routePlan", []):
+                    swap_info = route.get("swapInfo", {})
+                    dex_routes.append(
+                        RouteInfo(
+                            amm=swap_info.get("label", "Unknown"),
+                            pool_address=swap_info.get("ammKey", "Unknown"),
+                            in_amount=float(swap_info.get("inAmount", 0)) / 1e9,  # convert lamports to SOL
+                            out_amount=float(swap_info.get("outAmount", 0)),
+                            fee_amount=float(swap_info.get("feeAmount", 0)) / 1e9,
+                            fee_mint=swap_info.get("feeMint", "Unknown"),
+                        )
+                    )
+
+                liquidity_info = LiquidityInfo(
+                    tradable=data.get("priceImpact", 0) < slippage_threshold,
+                    price_impact_pct=data.get("priceImpact", 0),
+                    expected_out=data.get("outAmount", 0),
+                    min_out=data.get("otherAmountThreshold", 0),
+                    usd_value_in=data.get("swapUsdValue", 0),
+                    input_amount_sol=input_amount_sol,
+                    dex_routes=dex_routes,
+                    reason=None if data.get("priceImpact", 0) < slippage_threshold else "High slippage / low liquidity",
+                )
+                return liquidity_info
+
+            # Fallback (Raydium or other check)
+            # return await self.check_raydium_pools(mint_address)
             return None
+
         except Exception as e:
-            logging.error(f"Jupiter API error: {e}")
+            logging.error(f"Error checking liquidity: {e}")
             return None
     
     async def check_honeypot(self, mint_address: str) -> Dict:
         """Check for honeypot characteristics"""
-        result = {
-            "is_honeypot": False,
-            "reason": None,
-            "checks": {}
-        }
         
         try:
-            # 1. Check if trading is actually possible
-            simulation = await self.simulate_swap(mint_address, 0.1)
-            result["checks"]["can_buy"] = simulation.get("buy_success", False)
-            result["checks"]["can_sell"] = simulation.get("sell_success", False)
+            #1. use Rugcheck API to check for any risks
+            rugcheck = self.get_rugcheck_report_summary(mint_address)
+            if rugcheck.get("risk") != "low":
+                # 2. If the rugcheck score isn't low then we simulate swaps to confirm
+                simulation = await self.simulate_swap(mint_address, 0.1)
+                # If either buy or sell fails, it's a honeypot
+                if not (simulation.get("buy_success") and simulation.get("sell_success")):
+                    return {"is_honeypot": True, "reason": "Swap simulation failed"}
             
-            if not simulation.get("sell_success", False):
-                result["is_honeypot"] = True
-                result["reason"] = "Cannot sell tokens"
-                return result
+            """  
+            TODO: Additional checks can be implemented here as later on          
+            # 3. Check for excessive taxes
             
-            # 2. Check for excessive taxes
-            buy_tax = simulation.get("buy_tax", 0)
-            sell_tax = simulation.get("sell_tax", 0)
+            # 4. Check holder distribution
             
-            result["checks"]["buy_tax"] = buy_tax
-            result["checks"]["sell_tax"] = sell_tax
-            
-            if buy_tax > 10 or sell_tax > 10:
-                result["is_honeypot"] = True
-                result["reason"] = f"Excessive taxes: Buy {buy_tax}%, Sell {sell_tax}%"
-                return result
-            
-            # 3. Check holder distribution
-            holders = await self.get_holder_distribution(mint_address)
-            if holders:
-                top_holder_percentage = holders[0]["percentage"] if holders else 0
-                result["checks"]["top_holder"] = top_holder_percentage
-                
-                if top_holder_percentage > 50:
-                    result["is_honeypot"] = True
-                    result["reason"] = f"Centralized: Top holder owns {top_holder_percentage}%"
-                    return result
-            
-            # 4. Check for blacklist function
-            has_blacklist = await self.check_blacklist_function(mint_address)
-            result["checks"]["has_blacklist"] = has_blacklist
-            
-            if has_blacklist:
-                result["is_honeypot"] = True
-                result["reason"] = "Contract has blacklist functionality"
-                
+            # 5. Check for blacklist function
+            """
+            return {"is_honeypot": False, "reason": "No honeypot characteristics detected"}     
         except Exception as e:
             logging.error(f"Honeypot check error: {e}")
-            result["is_honeypot"] = True
-            result["reason"] = "Failed to verify trading safety"
+            return {"is_honeypot": True, "reason": "Failed to verify trading safety"}
+
+    def simulate_swap(self, mint_address: str, amount_sol: float) -> Dict:
+        """Simulate a buy/sell swap to check for taxes and trading ability"""
+        params = {
+            "inputMint": self.sol_mint,
+            "outputMint": mint_address,
+            "amount": int(amount_sol * 1_000_000_000),  # in lamports
+            "slippageBps": 50,  # 0.5%
+        }
+
+        try:
+            # Simulate buy
+            buy_response = requests.get(self.jupiter_quote_api, params=params)
+            logging.info(f"Buy swap simulation response for {mint_address}: {buy_response.text}")
+            if buy_response.status_code != 200:
+                return {"buy_success": False, "sell_success": False}
+
+            buy_data = buy_response.json()
+            # Set the output amount for the sell simulation
+            if not buy_data.get("outAmount"):
+                return {"buy_success": False, "sell_success": False}
+            sell_out_amount = buy_data["outAmount"]
             
-        return result
+            # Simulate sell (reverse swap)
+            sell_params = {
+                "inputMint": mint_address,
+                "outputMint": self.sol_mint,
+                "amount": sell_out_amount,
+                "slippageBps": 50,
+            }
+
+            sell_response = requests.get(self.jupiter_quote_api, params=sell_params)
+            logging.info(f"Sell swap simulation response for {mint_address}: {sell_response.text}")
+            # Ensure that sell works out
+            if sell_response.status_code != 200:
+                return {"buy_success": True, "sell_success": False}
+            
+            # If both succeed, return success
+            return {"buy_success": True,"sell_success": True}
+        except Exception as e:
+            logging.error(f"Swap simulation error: {e}")
+            return {"buy_success": False, "sell_success": False}
     
+    def get_rugcheck_report_summary(self, mint_address:str) -> Dict:
+        """Fetch token risk report summary from Rugcheck"""
+        try:
+            url = f"{self.rugcheck_api}/tokens/{mint_address}/report/summary"
+            token_report_summary = requests.get(url=url)
+            if token_report_summary.status_code == 200:
+                data = token_report_summary.json()
+
+                if data.get("score_normalised") > 70:
+                    return {"risk": "high", "reason": "High risk score from Rugcheck", "report": data}
+                
+                if len(data.get("risks")) > 0:
+                    if any(risk.get("severity") == "high" for risk in data.get("risks", [])):
+                        return {"risk": "high", "reason": "High severity risks from Rugcheck", "report": data}
+
+                    if any(risk.get("severity") == "medium" for risk in data.get("risks", [])):
+                        return {"risk": "medium", "reason": "Medium severity risks from Rugcheck", "report": data}
+
+                    if any(risk.get("severity") == "low" for risk in data.get("risks", [])):
+                        return {"risk": "low", "reason": "Low severity risks from Rugcheck", "report": data}
+
+                return {"risk": "low", "reason": "Low risk score from Rugcheck", "report": data}
+        except Exception as e:
+            logging.error(f"Was unable to retrieve token report summary for {mint_address}, this is the error: {e}")
+            return {"error": str(e)}
+
     def calculate_risk_score(self, validation_results: Dict) -> float:
         """Calculate overall risk score (0-1, higher is riskier)"""
         score = 0.0
@@ -278,11 +326,16 @@ class TokenValidator:
         # Liquidity check
         if not checks.get("has_liquidity", False):
             score += weights["has_liquidity"]
+        """ 
+        TODO: Implement minimum liquidity check when LiquidityInfo model supports it
         elif validation_results.get("liquidity"):
-            liq = validation_results["liquidity"].liquidity_usd
-            if liq < 10000:
-                score += weights["liquidity_amount"] * (1 - liq/10000)
-        
+        liq = validation_results["liquidity"].liquidity_usd
+        if liq < 10000:
+            score += weights["liquidity_amount"] * (1 - liq/10000)
+        """
+        # For now, liquidity amount check is skipped and the full score is awarded
+        score += 0.0
+
         # Honeypot check
         if checks.get("honeypot", {}).get("is_honeypot", False):
             score += weights["honeypot"]
@@ -293,7 +346,7 @@ class TokenValidator:
         """Fetch token metadata using Moralis API"""
         try:
             MORALIS_API_KEY = os.getenv("MORALIS_API_KEY")
-            url = "https://solana-gateway.moralis.io/token/mainnet/V5cCiSixPLAiEDX2zZquT5VuLm4prr5t35PWmjNpump/metadata"
+            url = f"https://solana-gateway.moralis.io/token/mainnet/{mint_address}/metadata"
 
             headers = {
             "Accept": "application/json",
@@ -302,7 +355,6 @@ class TokenValidator:
 
             response = requests.request("GET", url, headers=headers)
             metadata = response.json()
-            print(f"Fetched metadata for {mint_address}: {response.text}")
             return metadata
         except Exception as e:
             logging.error(f"Metadata fetch error: {e}")
@@ -344,6 +396,6 @@ if __name__ == "__main__":
     print("Running validate_token...")
     test_contract = "V5cCiSixPLAiEDX2zZquT5VuLm4prr5t35PWmjNpump"
     print(f"Validating token: {test_contract}")
-    result = asyncio.run(validator.get_token_info(test_contract))
-    print("Token Info:")
+    result = asyncio.run(validator.validate_token(test_contract))
+    print("Result:")
     print(result)

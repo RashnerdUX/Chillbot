@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 
 class TokenAlert(BaseModel):
@@ -29,16 +29,24 @@ class TokenMetadata(BaseModel):
     freeze_authority: Optional[str] = None
     mint_authority: Optional[str] = None
 
+class RouteInfo(BaseModel):
+    amm: str
+    pool_address: str
+    in_amount: float
+    out_amount: float
+    fee_amount: float
+    fee_mint: str
+
+
 class LiquidityInfo(BaseModel):
     """
-    LiquidityInfo model for representing liquidity information of a token.
-
-    Args:
-        BaseModel (_type_): _description_
+    Liquidity information for a token trade, derived from Jupiter quote API.
     """
-    pool_address: str
-    dex: str
-    liquidity_usd: float
-    volume_24h: float
-    price_usd: float
-    mcap: float
+    tradable: bool                  # Whether the token passes liquidity checks
+    price_impact_pct: float         # Price impact % of the test swap
+    expected_out: float             # Expected token output from simulated trade
+    min_out: float                  # Minimum tokens expected after slippage tolerance
+    usd_value_in: float             # Approximate USD value of simulated input swap
+    input_amount_sol: float         # SOL used for simulation
+    dex_routes: List[RouteInfo]     # Route details (AMM, pool, fees, etc.)
+    reason: Optional[str] = None    # If not tradable, explain why
