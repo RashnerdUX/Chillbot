@@ -4,6 +4,7 @@ import logging
 from models.auth import TelegramChatID
 from datetime import datetime
 from utils.message_processor import MessageProcessor
+from queue_tasks import process_token_alert
 
 
 class ChatMonitor:
@@ -49,14 +50,15 @@ class ChatMonitor:
                 if alert:
                     alert.source_chat = event.chat.title or str(event.chat_id)
                     alert.message_text = event.message.text[:500]
-                    alert.timestamp = datetime.now()
+                    alert.timestamp = alert.timestamp.isoformat()
                     alert.confidence_score = self.calculate_confidence(event.message.text)
 
-                    await self.contract_queue.put(alert)
-                    await self.process_alert(alert)
-
+                    # Send alert to Celery for processing
+                    self.process_alert(alert)
+            except ValueError as e:
+                self.logger.error(f"Failed to register handler: {e}")
             except Exception as e:
-                logging.error(f"Error processing message: {e}")
+                self.logger.error(f"Error processing message: {e}")
                 self.message_processor.logger.error(f"Error processing message: {e}",
                     message_text=event.message.text[:500],
                     timestamp=datetime.now(),
@@ -111,6 +113,16 @@ class ChatMonitor:
                 score += weight
         
         return min(score, 1.0)
+    
+    def process_alert(self, alert):
+        try:
+            # Convert alert to dict and queue the Celery task (fire-and-forget)
+            task = process_token_alert.delay(alert.__dict__)
+            
+            # Log the queuing (with task ID for debugging/tracking)
+            self.logger.info(f"Queued alert for processing: {alert.contract_address} (Task ID: {task.id})")
+        except Exception as e:
+            self.logger.error(f"Failed to queue alert: {alert.contract_address} | Error: {e}")
     
 if __name__ == "__main__":
     import os
