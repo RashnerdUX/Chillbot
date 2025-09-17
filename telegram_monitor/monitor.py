@@ -85,8 +85,11 @@ class ChatMonitor:
             print(f"{idx + 1}. {chat.chat_name} (ID: {chat.chat_id})")
         
         # TODO: Clean this up for the backend. The selection should be done via the frontend.
-        selected_index = input("Enter the id of the channel you want to monitor: ")
-        self.monitored_channels.append(selected_index)
+        selected = input("Enter the id of the channel you want to monitor: ")
+        # For debugging
+        name_of_selected = input("Enter the name of the channel you want to monitor: ")
+        print(await self.client.get_peer_id(name_of_selected))
+        self.monitored_channels.append(PeerChannel(int(selected)))
 
         print(f"Monitoring channels (ID only): {self.monitored_channels}")
 
