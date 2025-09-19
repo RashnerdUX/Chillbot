@@ -9,8 +9,9 @@ from solana.rpc.types import TokenAccountOpts
 from spl.token._layouts import ACCOUNT_LAYOUT
 from solders.system_program import transfer, TransferParams
 from solders.transaction import VersionedTransaction
-from solders.message import MessageV0
+from solders.message import MessageV0, to_bytes_versioned
 import base58
+import base64
 
 from models.wallet_models import SolanaToken
 
@@ -199,6 +200,40 @@ class WalletManager:
         await self.get_wallet_token()
         return {"account_balance": await self.get_balance(), "tokens": self.tokens}
     
+    async def sign_transaction(self, transaction) -> VersionedTransaction:
+        """
+        Sign a transaction.
+        TODO: This function needs to be tested for other transaction types aside Jupiter swap transactions
+
+        Args:
+            transaction : The transaction to sign.
+
+        Returns:
+            VersionedTransaction: The signed transaction.
+        """
+        try:
+            # Convert to VersionedTransaction
+            tx_bytes = base64.b64decode(transaction)
+            transaction = VersionedTransaction.from_bytes(tx_bytes)
+
+            # Sign the transaction
+            message = transaction.message
+            message_bytes = to_bytes_versioned(message)
+            signature = Keypair.from_base58_string(self.private_key).sign_message(message_bytes)
+
+            # Populate with signature
+            versioned_tx = VersionedTransaction.populate(message, [signature])
+
+            # Convert back to base64 for sending
+            serialized_tx = versioned_tx.__bytes__()
+            signed_transaction = base64.b64encode(serialized_tx).decode('utf-8')
+
+            print(f"Transaction signed successfully")
+            return signed_transaction
+        except Exception as e:
+            print(f"Error signing transaction: {e}")
+            return None
+    
     async def send_sol(self, recipient_address: str, amount: float) -> dict:
         """Send SOL to another wallet.
 
@@ -310,6 +345,7 @@ class WalletManager:
             mint=mint
         )
         latest_blockhash = await self.async_client.get_latest_blockhash()
+        # TODO: Handle when the ATA doesn't get created. There are args for Transaction for it to work. Understand it and implement it
         tx = Transaction().add(instruction)
         tx.recent_blockhash = latest_blockhash.value.blockhash
         tx.sign(payer)
