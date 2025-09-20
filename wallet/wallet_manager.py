@@ -15,6 +15,11 @@ import base64
 
 from models.wallet_models import SolanaToken
 
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 class WalletManager:
     def __init__(self):
         self.rpc_url = "https://api.mainnet-beta.solana.com"
@@ -23,13 +28,13 @@ class WalletManager:
         self.devnet_rpc_url = "https://api.devnet.solana.com"
         self.async_client = AsyncClient(self.devnet_rpc_url)
         # This is used to represent the wallet in the application
-        self.wallet_name = "Gen_Wallet_from_Script"
+        self.wallet_name = "Test Wallet"
         # This is the PubKey address of the wallet
-        self.wallet_address = "76uuLyJ2VYFoMQPpiRoWyuJcvoNwCUPknPFvohbXDB1v"
+        self.wallet_address = "7VrtporjwTLQPkGmDNnUzUu2RjxgZvzGQivzFEYtg9cf"
         # This is the base58 encoded secret key of the wallet. This is the private key pair in string format
-        self.user_wallet_secret = "b'\\x9ft\\xdbry\\x1d\\xa7F\\x1d\\xb2\\xd9\\x12\\xb1\\xa6ho\\xc9\\xb9[\\xad\\xa4\\xa8\\x9f5B:}\\xe7]c/r'"
+        self.user_wallet_secret = os.getenv("TEST_WALLET_SECRET_KEY")
         # This is the full keypair object, which includes both the public and private keys
-        self.private_key = "4BuaxhsCd2QphjSKDqyM4rMwtw3ajhQ8K6vRrfDKmX4SxdtyMe1sH9Mo5G2dxLFrsgjpTiXeWsCqbwHNqNYxLi92"
+        self.private_key = os.getenv("TEST_WALLET_PRIVATE_KEY")
         # This is the list of tokens associated with the wallet
         self.tokens: list[SolanaToken] = []
 
@@ -361,14 +366,9 @@ if __name__ == "__main__":
     load_dotenv()
     dUSDC_mint_address = "USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT"
     chillbot_mint_address = "3JutSRiMmvnMUSJrvbmpNuFvuLbQ6iGCQg8Ps5YAaahB"
-    my_bonk_address = "4B1FiyECpqgsiy6vdtyu292Q7NuFhFtFx1PC1rakgHzc"
+    my_bonk_address = os.getenv("DEV_WALLET_ADDRESS")
     wm = WalletManager()
-    wallet_info = asyncio.run(wm.send_token(
-        recipient_address=my_bonk_address,
-        token_address=dUSDC_mint_address,
-        amount=10_000_000,
-        decimals=6
-    ))
+    wallet_info = wm.create_wallet_with_mnemonic("My_New_Wallet", "My_Strong_Password")
     print(wallet_info)
 
     """ private_key = os.getenv("WALLET_PRIVATE_KEY")
