@@ -26,7 +26,7 @@ class WalletManager:
         # For testing, I'll use a devnet URL and set the current wallet
         # TODO: Remember to remove the hardcoded values before deploying to production
         self.devnet_rpc_url = "https://api.devnet.solana.com"
-        self.async_client = AsyncClient(self.devnet_rpc_url)
+        self.async_client = AsyncClient(self.rpc_url)
         # This is used to represent the wallet in the application
         self.wallet_name = "Test Wallet"
         # This is the PubKey address of the wallet
@@ -368,7 +368,7 @@ if __name__ == "__main__":
     chillbot_mint_address = "3JutSRiMmvnMUSJrvbmpNuFvuLbQ6iGCQg8Ps5YAaahB"
     my_bonk_address = os.getenv("DEV_WALLET_ADDRESS")
     wm = WalletManager()
-    wallet_info = wm.create_wallet_with_mnemonic("My_New_Wallet", "My_Strong_Password")
+    wallet_info = asyncio.run(wm.get_balance())
     print(wallet_info)
 
     """ private_key = os.getenv("WALLET_PRIVATE_KEY")

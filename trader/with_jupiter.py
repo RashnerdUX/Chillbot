@@ -2,10 +2,14 @@ from wallet.wallet_manager import WalletManager
 import os
 from dotenv import load_dotenv
 import aiohttp
+from decimal import Decimal
 
 load_dotenv()
 
 class JupiterTrader:
+    """
+    Handles trading operations with the Jupiter API.
+    """
     def __init__(self):
         self.wallet = WalletManager()
         self.jupiter_api_key = os.getenv("JUPITER_API_KEY")
@@ -52,6 +56,42 @@ class JupiterTrader:
                     message = "Swap failed"
                     return {"status": "Failed", "message": message, "error": data.get("error")}
                 
+    async def buy_token(self, token_mint: str, amount_sol: Decimal):
+        """
+        Buy a specified token using SOL
+        Args:
+            token_mint (str): The mint address of the token to buy.
+            amount_sol (Decimal): The amount of SOL to spend. It'll be converted to lamports.
+        Returns:
+            dict: Result of the operation with status and details.
+        """
+        quote = await self.get_order_quote(self.sol_mint, int(amount_sol * 1e9), token_mint)
+        if "error" in quote:
+            return {"status": "Failed", "message": quote["error"]}
+        
+        signed_tx = await self.wallet.sign_transaction(quote["transaction"])
+        result = await self.execute_swap(signed_tx, quote["request_id"])
+        return result
+
+    async def sell_token(self, token_mint: str, amount_token: Decimal):
+        """
+        Sell a specified token for SOL
+        
+        Args:
+            token_mint (str): The mint address of the token to sell.
+            amount_token (Decimal): The amount of the token to sell.
+
+        Returns:
+            dict: Result of the operation with status and details.
+        """
+        quote = await self.get_order_quote(token_mint, int(amount_token * 1e9), self.sol_mint)
+        if "error" in quote:
+            return {"status": "Failed", "message": quote["error"]}
+
+        signed_tx = await self.wallet.sign_transaction(quote["transaction"])
+        result = await self.execute_swap(signed_tx, quote["request_id"])
+        return result
+
 if __name__ == "__main__":
     import asyncio
 
