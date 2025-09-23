@@ -146,7 +146,7 @@ class WalletManager:
 
         return {"address": self.wallet_address, "secret_key": self.user_wallet_secret}
 
-    async def get_balance(self) -> float:
+    async def get_balance(self) -> dict[str, float]:
         """Get the balance of the wallet."""
         account_pubkey = Pubkey.from_string(self.wallet_address)
 

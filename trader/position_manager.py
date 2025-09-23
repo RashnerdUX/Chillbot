@@ -31,7 +31,7 @@ class PositionManager:
             # Get the price before buying
             # TODO: Handle checking current price later
             # current_price = await self.trader.get_token_price(token_mint)
-            current_price = 0.0  # Placeholder until we implement price fetching    
+            current_price = Decimal("0.0")  # Placeholder until we implement price fetching
 
             # Calculate position size based on risk management
             position_size = await self.calculate_position_size(Decimal(amount_sol))
@@ -67,6 +67,7 @@ class PositionManager:
                     'position_id': token_mint,
                     'entry_price': current_price,
                     'tokens_received': buy_result['received'],
+                    'sol_spent': buy_result['spent'],
                     # TODO: Consider sending the transaction hash later
                     # 'tx_hash': buy_result['tx_hash']
                 }
@@ -87,6 +88,11 @@ class PositionManager:
         """
 
         try:
+            # Get the price before buying
+            # TODO: Handle checking current price later
+            # current_price = await self.trader.get_token_price(token_mint)
+            current_price = Decimal("0.0")  # Placeholder until we implement price fetching
+
             # Retrieve the token
             # For now, we are using token_mint as the position ID
             open_position = self.active_positions[token_mint]
@@ -105,6 +111,15 @@ class PositionManager:
             # If all tokens sold, close the position and record exit details
             if open_position.token_amount <= 0:
                 del self.active_positions[token_mint]
+            
+            return {
+                'status': "Success",
+                'position_id': token_mint,
+                'tokens_sold': sell_result['spent'],
+                'sol_received': sell_result['received'],
+                'exit_price': float(current_price),
+                'profit_loss': float((current_price - open_position.entry_price) * quantity)
+            }
 
         except KeyError:
             logging.error(f"No active position found for token {token_mint}")
@@ -124,7 +139,8 @@ class PositionManager:
         # TODO: Do a more robust risk management strategy. E.g the user could set a specific sol amount or % of portfolio they want to risk per trade.
         # Get account balance
         result = await self.wallet.get_balance()
-        total_balance = Decimal(str(result.get("total_balance", 0.0)))
+        total_balance = Decimal(str(result.get("account_balance", 0.0)))
+        print(f"Total Balance: {total_balance} and type: {type(total_balance)}")
         
         # Maximum 5% of portfolio per trade
         max_position = total_balance * Decimal('0.05')
@@ -140,8 +156,9 @@ if __name__ == "__main__":
 
     async def main():
         position_manager = PositionManager()
-        token_mint = "7icvUrzYkTtBJCeNxgAPxb3RCAWkFzNW9vwyFhckpump"  # For JUP
-        amount_sol = 0.001  # Amount in SOL to invest
+        token_mint = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"  # For Bonk
+        test_token_mint = "3JutSRiMmvnMUSJrvbmpNuFvuLbQ6iGCQg8Ps5YAaahB"  # For CHT
+        amount_sol = Decimal('0.01')  # Amount in SOL to invest
 
         # Open a position
         open_result = await position_manager.open_position(token_mint, amount_sol)
@@ -157,7 +174,7 @@ if __name__ == "__main__":
         # Close 50% of the position
         print(f"Total Quantity: {total_quantity}")
         print(f"Closing 50% of position for {token_mint}")
-        partial_quantity = float(total_quantity) * 0.5
+        partial_quantity = total_quantity * Decimal('0.5')
         close_result = await position_manager.close_position(token_mint, partial_quantity)
         print(f"Close Position Result: {close_result}")
 

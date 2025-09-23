@@ -18,6 +18,17 @@ class JupiterTrader:
         self.sol_mint = "So11111111111111111111111111111111111111112"
 
     async def get_order_quote(self, input_mint: str, amount: int, output_mint: str):
+        """
+        Get a quote for a token swap from Jupiter API.
+
+        Args:
+            input_mint (str): The mint address of the token used to swap
+            amount (int): The amount of input token to swap, in lamports for SOL and according to token decimals for SPL tokens
+            output_mint (str): The mint address of the token to receive
+
+        Returns:
+            dict: A dictionary containing the quote details or an error message
+        """
         async with aiohttp.ClientSession() as session:
             headers = {
                 "x-api-key": self.jupiter_api_key,
@@ -25,7 +36,7 @@ class JupiterTrader:
             params = {
                 "inputMint": input_mint, #Base58 encoded mint address of the token I am using to swap
                 "outputMint": output_mint, #Base58 encoded mint address of the token I want to receive
-                "amount": amount, #Amount of input token to swap, in lamports (1 SOL = 10^9 lamports)
+                "amount": amount, #Amount of input token to swap, in lamports (1 SOL = 10^9 lamports) for solana and according to token decimals for SPL tokens
                 "taker": self.wallet.wallet_address, #Base58 encoded public key of the wallet performing the swap
                 # TODO: Explore referral options later to monetize the bot
                 #"referralAccount": os.getenv("DEV_WALLET_ADDRESS"), #Base58 encoded public key of the referral account
@@ -65,7 +76,13 @@ class JupiterTrader:
         Returns:
             dict: Result of the operation with status and details.
         """
-        quote = await self.get_order_quote(self.sol_mint, int(amount_sol * 1e9), token_mint)
+        if amount_sol <= 0:
+            return {"status": "Failed", "message": "Invalid amount: must be positive"}
+        
+        # SOL always has 9 decimals, so convert to lamports using Decimal for precision
+        lamports = int(amount_sol * Decimal('1000000000'))  # Use Decimal to avoid float mixing
+        
+        quote = await self.get_order_quote(self.sol_mint, lamports, token_mint)
         if "error" in quote:
             return {"status": "Failed", "message": quote["error"]}
         
@@ -84,7 +101,14 @@ class JupiterTrader:
         Returns:
             dict: Result of the operation with status and details.
         """
-        quote = await self.get_order_quote(token_mint, int(amount_token * 1e9), self.sol_mint)
+        if amount_token <= 0:
+            return {"status": "Failed", "message": "Invalid amount: must be positive"}
+        
+        # Convert the token amount to its raw integer representation
+        raw_amount = int(amount_token)
+        print(f"Raw amount to sell: {raw_amount}")
+        
+        quote = await self.get_order_quote(token_mint, raw_amount, self.sol_mint)
         if "error" in quote:
             return {"status": "Failed", "message": quote["error"]}
 
@@ -99,7 +123,8 @@ if __name__ == "__main__":
         trader = JupiterTrader()
         
         kindness_mint = "V5cCiSixPLAiEDX2zZquT5VuLm4prr5t35PWmjNpump"
-        quote = await trader.get_order_quote(trader.sol_mint, 1000000, kindness_mint) # 0.001 SOL to Kindness
+        Bonk_mint = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"  # For Bonk
+        quote = await trader.get_order_quote(Bonk_mint, 3800000000, trader.sol_mint) # 0.001 SOL to Kindness
         print(quote)
         signed_tx = await trader.wallet.sign_transaction(quote["transaction"])
         print(signed_tx)
