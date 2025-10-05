@@ -27,3 +27,12 @@ class Position(BaseModel):
     trailing_stop_enabled: bool = False
     highest_price: Optional[Decimal] = None
 
+class PriceUpdate(BaseModel):
+    token_mint: str
+    price_sol: Decimal
+    price_usd: Optional[Decimal] = None
+    timestamp: datetime
+    source: str
+    volume_24h: Optional[Decimal] = None
+    liquidity_usd: Optional[Decimal] = None
+

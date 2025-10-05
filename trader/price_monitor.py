@@ -4,72 +4,132 @@ import websockets
 import json
 from decimal import Decimal
 from typing import Dict, Callable
-from dataclasses import dataclass
 from datetime import datetime
 import logging
+import os
 
+from utils.token_usd_price import determine_usd_price
+from models.position_models import PriceUpdate, Position, PositionStatus
+from trader.position_manager import PositionManager
+
+# TODO: Replace with the global logger class
 logging = logging.getLogger(__name__)
-
-@dataclass
-class PriceUpdate:
-    token_mint: str
-    price_usd: Decimal
-    timestamp: datetime
-    source: str
-    volume_24h: float
-    liquidity_usd: float
 
 class PriceMonitor:
     def __init__(self, positions_manager):
-        self.positions_manager = positions_manager
-        self.active_subscriptions = {}
+        """
+        Monitor cryptocurrency prices and manage trading positions.
+
+        Args:
+            positions_manager (PositionManager): An instance of the PositionManager class to manage positions based on price updates and the user's preferred ROI and loss threshold.
+        """
+        self.positions_manager:PositionManager = positions_manager
+        self.active_subscriptions: list[dict] = [{"pair_address": "CbfFQCuzkmrnZwBi1gCVm3qwdN9igcSm2BzNXBUyuaDs", "token_mint": "2RfXjaiepngcBuGgPLtdnH22g68eetpgzCDX44Hnpump"}]  # Example token subscription
         self.price_callbacks = {}
         self.ws_connections = {}
         
     async def start_monitoring(self):
         """Start price monitoring service"""
         tasks = [
-            self.connect_jupiter_stream(),
-            self.connect_birdeye_stream(),
-            self.poll_backup_prices()
+            self.connect_solana_stream(),
+            # TODO: To use BirdEye, I'll need to set up an account and get API keys. Paying a shit ton that I can't afford yet
+            # 5tsgayk6znUQzxWdWh8gA6dLiDQ4JUDDNeRBFFfPF5tX
+            # self.connect_birdeye_stream(),
         ]
         await asyncio.gather(*tasks)
+
+    async def stop_monitoring(self):
+        """
+        Stop price monitoring service
+        """
+        pass 
     
-    async def connect_jupiter_stream(self):
-        """Connect to Jupiter price stream"""
-        uri = "wss://price.jup.ag/v1/stream"
-        
-        async with websockets.connect(uri) as websocket:
-            self.ws_connections['jupiter'] = websocket
-            
-            # Subscribe to tokens
-            for token in self.active_subscriptions.keys():
-                await websocket.send(json.dumps({
-                    "op": "subscribe",
-                    "channel": "price",
-                    "markets": [token]
-                }))
-            
-            # Listen for updates
-            async for message in websocket:
-                await self.handle_price_update('jupiter', json.loads(message))
+    async def connect_solana_stream(self):
+        """Connect to Solana price stream"""
+        api_key = os.getenv("SOLANA_STREAMING_API_KEY", "solana_streaming_default_key")
+        # For debugging purposes
+        print(f"Using Solana Streaming API Key: {api_key}")
+        uri = 'wss://api.solanastreaming.com/'
+        headers = {
+            "X-API-KEY": api_key
+        }
+
+        while True:
+            try:
+                async with websockets.connect(
+                        uri, 
+                        additional_headers=headers, 
+                        ping_interval=10, 
+                        ping_timeout=5, 
+                        close_timeout=5
+                    ) as websocket:
+                        self.ws_connections['solana_streaming'] = websocket
+
+                        # Subscribe to tokens using their pair address from Dexscreener
+                        for index, token in enumerate(self.active_subscriptions):
+                            pair_address = token.get('pair_address')
+                            # For debugging purposes
+                            print(f"Subscribing to Solana stream for pair address: {pair_address}")
+                            await websocket.send(json.dumps({
+                                    "id": index + 1,
+                                    "method": "swapSubscribe",
+                                    "params": {
+                                        "include": {
+                                            "ammAccount": [
+                                                pair_address #This will be the pair address so that we get updates from the largest liquidity pool for the token and only that to avoid false price updates
+                                            ]
+                                        }
+                                    }
+                                }))
+                        
+                        # Listen for updates
+                        async for message in websocket:
+                            try:
+                                # Debugging purposes
+                                print(f"Received Solana stream message: {message}")
+                                data = json.loads(message)
+                                asyncio.create_task(self.handle_price_update('solana_streaming', data))
+                            except json.JSONDecodeError as e:
+                                print(f"An error occured when parsing the data")
+                            except Exception as e:
+                                print(f"An error occured. {e}")
+            except websockets.exceptions.ConnectionClosedError as e:
+                # If the connection closes, retry the connection after 5 seconds
+                print(f"Connection closed: {e.code} - {e.reason}. Reconnecting in 5 seconds...")
+                await asyncio.sleep(5)
+            except Exception as e:
+                # If any other error occurs, retry the connection after 5 seconds
+                print(f"An error occured: {e}")
+                await asyncio.sleep(5)
     
     async def handle_price_update(self, source: str, data: Dict):
         """Process incoming price update"""
+
+        # The first response from the Solana Streaming API is usually a notification that the subscription was successful so skip
+        if not data.get("params"):
+            print(f"No price data sent in this message")
+            return 
+        
+        # Send the price data once it comes through
+        price_data = data.get("params")
+        swap_data = price_data.get("swap")
+
         try:
+            sol_price = Decimal(swap_data.get('quotePrice'))
+            usd_price = determine_usd_price(sol_price)
+
             price_update = PriceUpdate(
-                token_mint=data.get('mint'),
-                price_usd=Decimal(str(data.get('price', 0))),
-                timestamp=datetime.utcnow(),
+                token_mint=swap_data.get("baseTokenMint"),
+                price_sol= sol_price,
+                price_usd= usd_price,
+                timestamp=datetime.now(),
                 source=source,
                 volume_24h=data.get('volume24h', 0),
                 liquidity_usd=data.get('liquidity', 0)
             )
             
-            # Update position tracking
-            await self.positions_manager.update_price(price_update)
-            
             # Check exit conditions
+            # This is where trades will be closed if there's an SL or TP set by the user
             await self.check_exit_conditions(price_update)
             
             # Execute callbacks
@@ -82,9 +142,15 @@ class PriceMonitor:
     
     async def check_exit_conditions(self, price_update: PriceUpdate):
         """Check if any positions should be closed"""
-        positions = await self.positions_manager.get_active_positions(
+
+        logging.info("Checking the exit conditions")
+        positions: list[Position] = self.positions_manager.get_active_positions(
             token_mint=price_update.token_mint
         )
+
+        if not positions.__len__ > 0:
+            logging.warning(f"There is no open position for {price_update.token_mint} to check for exit conditions")
+            await self.stop_monitoring()
         
         for position in positions:
             # Calculate current ROI
@@ -99,41 +165,49 @@ class PriceMonitor:
             # Check stop loss
             elif roi <= position.stop_loss:
                 await self.execute_stop_loss(position, current_price, roi)
-            
-            # Check trailing stop
-            elif position.trailing_stop_enabled:
-                await self.check_trailing_stop(position, current_price, roi)
+
+            #TODO: Implement trailing stop in V2
     
-    async def execute_take_profit(self, position, current_price, roi):
+    async def execute_take_profit(self, position:Position, current_price:Decimal, roi:Decimal):
         """Execute take profit order"""
         logging.info(f"Take profit triggered for {position.token_mint}: ROI {roi:.2f}%")
         
         # Execute sell order
         result = await self.positions_manager.close_position(
-            position_id=position.id,
-            reason="take_profit",
-            exit_price=current_price,
-            roi=roi
+            token_mint=position.token_mint,
+            reason=f"Take profit @ {current_price}",
+            quantity= position.token_amount, #Sell everything at TP
         )
         
-        if result['success']:
+        if result['status'] == "success":
             await self.notify_exit(position, "TAKE PROFIT", roi, result['tx_hash'])
     
-    async def execute_stop_loss(self, position, current_price, roi):
+    async def execute_stop_loss(self, position:Position, current_price:Decimal, roi:Decimal):
         """Execute stop loss order"""
         logging.warning(f"Stop loss triggered for {position.token_mint}: ROI {roi:.2f}%")
         
         # Execute sell order immediately
         result = await self.positions_manager.close_position(
-            position_id=position.id,
-            reason="stop_loss",
-            exit_price=current_price,
-            roi=roi,
-            priority_fee=50000  # Higher priority for stop loss
+            token_mint=position.token_mint,
+            reason=f"Stop loss @ {current_price}",
+            quantity= position.token_amount, #Sell everything at SL
         )
         
-        if result['success']:
+        if result['status'] == "success":
             await self.notify_exit(position, "STOP LOSS", roi, result['tx_hash'])
+
+    async def notify_exit(self, position: Position, action:str, roi:Decimal, tx_hash:str):
+        """
+        Notify the user that a position has been closed on his/her behalf
+
+        Args:
+            position (Position): The position that was closed
+            action (str): Why the position was closed
+            roi (float): The ROI gotten from the trade
+            tx_hash (str): _description_
+        """
+        # TODO: This would be used for notifying the user like a websocket
+        logging.info(f"The position for {position.token_mint} has been closed because of {action} and the ROI is {roi}. Here's the tx_id = {tx_hash}")
 
 
 if __name__ == "__main__":
@@ -141,8 +215,23 @@ if __name__ == "__main__":
 
     async def main():
         from trader.position_manager import PositionManager
+        print("Initializing Position Manager and Price Monitor...")
         position_manager = PositionManager()
+        mock_position = Position(
+            token_mint= "2RfXjaiepngcBuGgPLtdnH22g68eetpgzCDX44Hnpump",
+            token_amount= 200000000,
+            entry_price= Decimal("0.0002786"),
+            entry_amount_sol= Decimal("0.002"),
+            target_roi = 50.0,
+            status= PositionStatus.OPEN,
+            stop_loss=25.0,
+            created_at=datetime.now(),
+        )
+        position_manager.positions["2RfXjaiepngcBuGgPLtdnH22g68eetpgzCDX44Hnpump"] = mock_position
         price_monitor = PriceMonitor(position_manager)
-        await price_monitor.start_monitoring()
 
+        print("Connecting to Solana Stream...")
+        await price_monitor.connect_solana_stream()
+
+    print("Starting Price Monitor...")
     asyncio.run(main())

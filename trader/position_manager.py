@@ -4,14 +4,14 @@ import logging
 
 from trader.with_jupiter import JupiterTrader
 from wallet.wallet_manager import WalletManager
-from models.position_models import Position, PositionStatus
+from models.position_models import Position, PositionStatus, PriceUpdate
 
 logging = logging.getLogger(__name__)
 class PositionManager:
     def __init__(self):
         self.wallet = WalletManager()
         self.trader = JupiterTrader()
-        self.active_positions: dict[str, Position] = {}
+        self.positions: dict[str, Position] = {}
 
     async def open_position(self, token_mint: str, amount_sol: float):
         """
@@ -45,11 +45,11 @@ class PositionManager:
             # Record the position
             # TODO: Once we are using a database, store positions in memory only for active tracking and with their DB ids
             # If position exists, update it; otherwise, create a new one
-            if token_mint in self.active_positions:
-                self.active_positions[token_mint].entry_amount_sol += position_size
-                self.active_positions[token_mint].token_amount = Decimal(str(buy_result.get("received")))
+            if token_mint in self.positions:
+                self.positions[token_mint].entry_amount_sol += position_size
+                self.positions[token_mint].token_amount = Decimal(str(buy_result.get("received")))
             else:
-                self.active_positions[token_mint] = Position(
+                self.positions[token_mint] = Position(
                     token_mint=token_mint,
                     entry_price=Decimal(str(buy_result.get("received"))) / position_size,
                     entry_amount_sol=position_size,
@@ -75,12 +75,13 @@ class PositionManager:
             logging.error(f"Error adding position for {token_mint}: {e}")
             return {"status": "Failed", "message": str(e)}
 
-    async def close_position(self, token_mint: str, quantity: Decimal):
+    async def close_position(self, token_mint: str, reason:str, quantity: Decimal):
         """
         Remove or reduce a position after selling a token
         
         Args:
             token_mint (str): The mint address of the token to sell.
+            reason (str): The reason why the position was closed
             quantity (Decimal): The amount of the token to sell.
         
         Returns:
@@ -95,7 +96,7 @@ class PositionManager:
 
             # Retrieve the token
             # For now, we are using token_mint as the position ID
-            open_position = self.active_positions[token_mint]
+            open_position = self.positions[token_mint]
             open_position.status = PositionStatus.CLOSING
 
             # Reduce or sell all the holdings for the given token
@@ -110,11 +111,12 @@ class PositionManager:
             open_position.token_amount -= quantity
             # If all tokens sold, close the position and record exit details
             if open_position.token_amount <= 0:
-                del self.active_positions[token_mint]
+                del self.positions[token_mint]
             
             return {
                 'status': "Success",
                 'position_id': token_mint,
+                'reason': reason,
                 'tokens_sold': sell_result['spent'],
                 'sol_received': sell_result['received'],
                 'exit_price': float(current_price),
@@ -129,10 +131,34 @@ class PositionManager:
             return {"status": "Failed", "message": str(e)}
 
     def get_position(self, token_mint: str):
-        return self.active_positions.get(token_mint, None)
+        return self.positions.get(token_mint, None)
 
-    def get_all_positions(self):
-        return self.active_positions
+    def get_all_positions(self) -> dict:
+        return self.positions
+    
+    def get_active_positions(self, token_mint:str) -> list[Position]:
+        """
+        Get a list of active positions for a particular token i.e. positions with a status of OPEN
+
+        Args:
+            token_mint(str): The token mint address of the token serving as the key in memory
+
+        Returns:
+            list[Position]: A list of all positions for that token with 
+        """
+        # NOTE: Load up positions from db and store in local memory once app starts up
+        if not len(self.positions) > 0:
+            return
+        
+        # Initialize an empty list to store the active positions
+        active_positions = []
+        
+        # NOTE: Once the db is part of the system, position will have ids and the key will be the id not the token mint
+        for key, position in enumerate(self.positions):
+            if position.token_mint == token_mint:
+                active_positions.append(position)
+
+        return active_positions
 
     async def calculate_position_size(self, requested_amount: Decimal) -> Decimal:
         """Calculate position size based on risk management rules"""
@@ -175,13 +201,13 @@ if __name__ == "__main__":
         print(f"Total Quantity: {total_quantity}")
         print(f"Closing 50% of position for {token_mint}")
         partial_quantity = total_quantity * Decimal('0.5')
-        close_result = await position_manager.close_position(token_mint, partial_quantity)
+        close_result = await position_manager.close_position(token_mint, "closing", partial_quantity)
         print(f"Close Position Result: {close_result}")
 
         # Close the remaining position after another wait
         await asyncio.sleep(10)
         print(f"Closing remaining position for {token_mint}")
-        final_close_result = await position_manager.close_position(token_mint, total_quantity - partial_quantity)
+        final_close_result = await position_manager.close_position(token_mint, "closing", total_quantity - partial_quantity)
         print(f"Final Close Position Result: {final_close_result}")
 
     asyncio.run(main())
