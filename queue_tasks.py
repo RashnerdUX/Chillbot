@@ -1,6 +1,20 @@
 from celery import Celery
 from typing import Dict
+from decimal import Decimal
 from utils.token_validator import TokenValidator
+import asyncio
+import logging
+from redis import Redis
+
+from utils.okx_helper import access_okx_stream
+
+# TODO: Replace with the Global logging class
+logger = logging.getLogger(__name__)
+
+# Initialize the Redis client and use the same
+# TODO: Use the global Redis manager
+redis_client = Redis()
+# The key for solana's price in cache is SOLANA_PRICE
 
 
 app = Celery('queue_tasks', broker='redis://localhost:6379/0')
@@ -63,5 +77,21 @@ def calculate_risk_score(alert_data: Dict) -> float:
     validator = TokenValidator()
     risk_score = validator.calculate_risk_score(alert_data)
     return risk_score
+
+@app.task
+def save_sol_price():
+    """
+    The Solana Price Service
+    Maintain the current price of Solana in Redis cache and make it available to all parts of the program at all times
+    """
+    logger.info("Starting the price stream from OKX which will update the Redis cache")
+    
+    try:
+        asyncio.run(access_okx_stream(token_ticker="SOL"))
+    except KeyboardInterrupt:
+        logger.info("Shutting down SOL price stream...")
+    except Exception as e:
+        logger.error(f"Fatal error in when saving the sol price: {e}", exc_info=True)
+        raise
 
 
