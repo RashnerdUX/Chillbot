@@ -18,6 +18,7 @@ class Position(BaseModel):
     token_amount: Decimal
     target_roi: float = Field(..., description="Target ROI percentage for taking profit")
     stop_loss: float = Field(..., description="Stop loss percentage")
+    ammKey: str = Field(..., description="This is the most active liquidity pool that will be used to monitor the pair")
     status: PositionStatus
     created_at: datetime
     entry_tx: Optional[str] = None

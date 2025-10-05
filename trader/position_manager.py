@@ -38,7 +38,8 @@ class PositionManager:
 
             # Execute swap via JupiterTrader
             buy_result = await self.trader.buy_token(token_mint, position_size)
-            if buy_result.get("status") != "Success":
+            buy_result_data = buy_result.get("data")
+            if buy_result_data.get("status") != "Success":
                 logging.error(f"Failed to buy token {token_mint}: {buy_result.get('message')}")
                 return {"status": "Failed", "message": buy_result.get("message")}
 
@@ -51,12 +52,13 @@ class PositionManager:
             else:
                 self.positions[token_mint] = Position(
                     token_mint=token_mint,
-                    entry_price=Decimal(str(buy_result.get("received"))) / position_size,
+                    entry_price=Decimal(str(buy_result_data.get("received"))) / position_size,
                     entry_amount_sol=position_size,
-                    token_amount=Decimal(str(buy_result.get("received"))),
+                    token_amount=Decimal(str(buy_result_data.get("received"))),
                     target_roi=target_roi,
                     stop_loss=stop_loss,
                     status=PositionStatus.OPEN,
+                    ammKey=buy_result.get("ammKey"), #This is the liquidity pool that will be monitored
                     created_at=datetime.now(),
                     entry_tx=buy_result.get("message"),
                     trailing_stop_enabled=True,
@@ -101,11 +103,12 @@ class PositionManager:
 
             # Reduce or sell all the holdings for the given token
             sell_result = await self.trader.sell_token(token_mint, quantity)
+            sell_result_data = sell_result.get("data")
 
             # Check status of the sell
-            if sell_result.get("status") != "Success":
+            if sell_result_data.get("status") != "Success":
                 logging.error(f"Failed to sell token {token_mint}: {sell_result.get('message')}")
-                return {"status": "Failed", "message": sell_result.get("message")}
+                return {"status": "Failed", "message": sell_result_data.get("message")}
 
             # Update the position once sell is successful
             open_position.token_amount -= quantity
@@ -117,8 +120,8 @@ class PositionManager:
                 'status': "Success",
                 'position_id': token_mint,
                 'reason': reason,
-                'tokens_sold': sell_result['spent'],
-                'sol_received': sell_result['received'],
+                'tokens_sold': sell_result_data['spent'],
+                'sol_received': sell_result_data['received'],
                 'exit_price': float(current_price),
                 'profit_loss': float((current_price - open_position.entry_price) * quantity)
             }

@@ -46,7 +46,7 @@ class JupiterTrader:
                 data = await response.json()
                 if data.get("error"):
                     return {"error": data.get("error")}
-                return {"request_id": data.get("requestId"), "transaction": data.get("transaction")}
+                return {"request_id": data.get("requestId"), "transaction": data.get("transaction"), "ammKey": data["routePlan"][0]["ammKey"]}
             
     async def execute_swap(self, signedTransaction: str, request_id: str):
         async with aiohttp.ClientSession() as session:
@@ -88,7 +88,7 @@ class JupiterTrader:
         
         signed_tx = await self.wallet.sign_transaction(quote["transaction"])
         result = await self.execute_swap(signed_tx, quote["request_id"])
-        return result
+        return {"data": result, "ammKey":quote.get("ammKey")}
 
     async def sell_token(self, token_mint: str, amount_token: Decimal):
         """
@@ -114,7 +114,7 @@ class JupiterTrader:
 
         signed_tx = await self.wallet.sign_transaction(quote["transaction"])
         result = await self.execute_swap(signed_tx, quote["request_id"])
-        return result
+        return {"data": result, "ammKey":quote.get("ammKey")}
 
 if __name__ == "__main__":
     import asyncio
