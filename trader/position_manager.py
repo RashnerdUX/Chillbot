@@ -157,7 +157,7 @@ class PositionManager:
         active_positions = []
         
         # NOTE: Once the db is part of the system, position will have ids and the key will be the id not the token mint
-        for key, position in enumerate(self.positions):
+        for key, position in enumerate(self.positions.values()):
             if position.token_mint == token_mint:
                 active_positions.append(position)
 

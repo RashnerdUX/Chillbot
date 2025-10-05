@@ -24,17 +24,21 @@ class PriceMonitor:
             positions_manager (PositionManager): An instance of the PositionManager class to manage positions based on price updates and the user's preferred ROI and loss threshold.
         """
         self.positions_manager:PositionManager = positions_manager
-        self.active_subscriptions: list[dict] = [{"pair_address": "CbfFQCuzkmrnZwBi1gCVm3qwdN9igcSm2BzNXBUyuaDs", "token_mint": "2RfXjaiepngcBuGgPLtdnH22g68eetpgzCDX44Hnpump"}]  # Example token subscription
+        self.active_subscriptions: list[dict] = [{"ammKey": "CbfFQCuzkmrnZwBi1gCVm3qwdN9igcSm2BzNXBUyuaDs", "token_mint": "2RfXjaiepngcBuGgPLtdnH22g68eetpgzCDX44Hnpump"}]  # Example token subscription
         self.price_callbacks = {}
         self.ws_connections = {}
         
     async def start_monitoring(self):
         """Start price monitoring service"""
+        # At start of service, set the positions that will be monitored
+        # NOTE: Since I plan to cache the price for a token and then allow other users access it from the cache so I need to apply a more robust logic here to ensure each token mint is unique. Maybe convert to a tuple and then back to list or something
+        # TODO: Consider the note above when the product is serving more than one user
+        self.active_subscriptions = [{"token_mint": p.token_mint, "ammKey": p.ammKey} for p in self.positions_manager.positions.values()]
+
+        # Set the tasks that will run continously 
         tasks = [
             self.connect_solana_stream(),
             # TODO: To use BirdEye, I'll need to set up an account and get API keys. Paying a shit ton that I can't afford yet
-            # 5tsgayk6znUQzxWdWh8gA6dLiDQ4JUDDNeRBFFfPF5tX
-            # self.connect_birdeye_stream(),
         ]
         await asyncio.gather(*tasks)
 
@@ -67,7 +71,7 @@ class PriceMonitor:
 
                         # Subscribe to tokens using their pair address from Dexscreener
                         for index, token in enumerate(self.active_subscriptions):
-                            pair_address = token.get('pair_address')
+                            pair_address = token.get('ammKey')
                             # For debugging purposes
                             print(f"Subscribing to Solana stream for pair address: {pair_address}")
                             await websocket.send(json.dumps({
