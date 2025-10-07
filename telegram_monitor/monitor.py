@@ -4,7 +4,7 @@ import logging
 from models.auth import TelegramChatID
 from datetime import datetime
 from utils.message_processor import MessageProcessor
-from queue_tasks import process_token_alert
+from services.queue_tasks import process_token_alert
 
 
 class ChatMonitor:
