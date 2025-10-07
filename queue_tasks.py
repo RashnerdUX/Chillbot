@@ -37,10 +37,13 @@ def process_token_alert(self, alert_data: Dict):
                 # Queue for trading
                 execute_trade.delay(alert_data)
         
+        logger.info("Successfully processed the alert")
         return {"status": "processed", "contract": alert_data['contract_address']}
     
     except Exception as exc:
         # Retry with exponential backoff
+        logger.warning("Failed to process the data. Trying to process again")
+        # TODO: Check this functionality and work it well
         raise self.retry(exc=exc, countdown=2 ** self.request.retries)
 
 @app.task
@@ -58,11 +61,15 @@ def validate_token(contract_address: str) -> bool:
     Returns:
         bool: True if the token is valid, False otherwise.
     """
-    validator = TokenValidator()
-    validation_result = validator.validate_token(contract_address)
-    is_valid = validation_result['is_valid']
-    print(f"Token {contract_address} validation result: {is_valid}")
-    return is_valid
+    try:
+        validator = TokenValidator()
+        validation_result = validator.validate_token(contract_address)
+        is_valid = validation_result['is_valid']
+        logger.info(f"Token {contract_address} validation result: {is_valid}")
+        return is_valid
+    except Exception as e:
+        logger.warning(f"Failed to validate token {contract_address}")
+        return False
 
 @app.task
 def calculate_risk_score(alert_data: Dict) -> float:
@@ -91,7 +98,7 @@ def save_sol_price():
     except KeyboardInterrupt:
         logger.info("Shutting down SOL price stream...")
     except Exception as e:
-        logger.error(f"Fatal error in when saving the sol price: {e}", exc_info=True)
+        logger.exception(f"Fatal error in when saving the sol price: {e}")
         raise
 
 

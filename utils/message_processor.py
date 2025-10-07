@@ -30,8 +30,8 @@ class MessageProcessor:
             ],
         )
         if alert.contract_address:
-            print(alert)
-            # self.logger.info(f"Extracted contract address: {alert.contract_address}")
+            self.logger.info(alert)
+            self.logger.info(f"Extracted contract address: {alert.contract_address}")
             # TODO: Add a background call to open a position on the contract address
             return alert
         else:

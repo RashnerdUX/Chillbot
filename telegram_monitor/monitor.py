@@ -42,7 +42,7 @@ class ChatMonitor:
         @self.client.on(events.NewMessage(chats=self.monitored_channels))
         async def handle_new_message(event):
             # For debugging purposes, print the message
-            print(f"New message in {event.chat.title or event.chat_id}: {event.message.text[:100]}...")
+            self.logger.info(f"New message in {event.chat.title or event.chat_id}: {event.message.text[:100]}...")
             try:
                 # Extract potential contract address from the message
                 alert = self.message_processor.extract_contract_address(event.message.text, event.chat_id)
@@ -58,7 +58,7 @@ class ChatMonitor:
             except ValueError as e:
                 self.logger.error(f"Failed to register handler: {e}")
             except Exception as e:
-                self.logger.error(f"Error processing message: {e}")
+                self.logger.exception("Error processing message")
                 self.message_processor.logger.error(f"Error processing message: {e}",
                     message_text=event.message.text[:500],
                     timestamp=datetime.now(),
@@ -90,7 +90,7 @@ class ChatMonitor:
         selected = input("Enter the id of the channel you want to monitor: ")
         # For debugging
         name_of_selected = input("Enter the name of the channel you want to monitor: ")
-        print(await self.client.get_peer_id(name_of_selected))
+        self.logger.info(await self.client.get_peer_id(name_of_selected))
         self.monitored_channels.append(PeerChannel(int(selected)))
 
         print(f"Monitoring channels (ID only): {self.monitored_channels}")
@@ -122,7 +122,7 @@ class ChatMonitor:
             # Log the queuing (with task ID for debugging/tracking)
             self.logger.info(f"Queued alert for processing: {alert.contract_address} (Task ID: {task.id})")
         except Exception as e:
-            self.logger.error(f"Failed to queue alert: {alert.contract_address} | Error: {e}")
+            self.logger.exception(f"Failed to queue alert: {alert.contract_address}")
     
 if __name__ == "__main__":
     import os

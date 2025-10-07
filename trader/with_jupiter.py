@@ -3,8 +3,11 @@ import os
 from dotenv import load_dotenv
 import aiohttp
 from decimal import Decimal
+import logging
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 class JupiterTrader:
     """
@@ -45,7 +48,10 @@ class JupiterTrader:
             async with session.get(f"{self.ultra_base_url}/order", headers=headers, params=params) as response:
                 data = await response.json()
                 if data.get("error"):
+                    logger.error(f"Error get quote from Jupiter API. Here's the error: {data}")
                     return {"error": data.get("error")}
+                
+                logger.info(f"Successfully obtained the quote for {output_mint}")
                 return {"request_id": data.get("requestId"), "transaction": data.get("transaction"), "ammKey": data["routePlan"][0]["ammKey"]}
             
     async def execute_swap(self, signedTransaction: str, request_id: str):
@@ -62,9 +68,11 @@ class JupiterTrader:
                 data = await response.json()
                 if data.get("status") == "Success":
                     message = "Swap executed successfully."
+                    logger.info("Successfully swapped the token")
                     return {"status": "Success", "message": message, "received": data.get("outputAmountResult"), "spent": data.get("inputAmountResult")}
                 else:
                     message = "Swap failed"
+                    logger.error(f"Failed to swap a token. Here's the data: {data}")
                     return {"status": "Failed", "message": message, "error": data.get("error")}
                 
     async def buy_token(self, token_mint: str, amount_sol: Decimal):
@@ -84,10 +92,12 @@ class JupiterTrader:
         
         quote = await self.get_order_quote(self.sol_mint, lamports, token_mint)
         if "error" in quote:
+            logger.error(f"Error occured when getting a quote to buy the token {token_mint}")
             return {"status": "Failed", "message": quote["error"]}
         
         signed_tx = await self.wallet.sign_transaction(quote["transaction"])
         result = await self.execute_swap(signed_tx, quote["request_id"])
+        logger.info(f"Successfully purchased {token_mint}")
         return {"data": result, "ammKey":quote.get("ammKey")}
 
     async def sell_token(self, token_mint: str, amount_token: Decimal):
@@ -110,10 +120,12 @@ class JupiterTrader:
         
         quote = await self.get_order_quote(token_mint, raw_amount, self.sol_mint)
         if "error" in quote:
+            logger.error(f"Error occured when getting a quote to sell the token {token_mint}")
             return {"status": "Failed", "message": quote["error"]}
 
         signed_tx = await self.wallet.sign_transaction(quote["transaction"])
         result = await self.execute_swap(signed_tx, quote["request_id"])
+        logger.info(f"Successfully purchased {token_mint}")
         return {"data": result, "ammKey":quote.get("ammKey")}
 
 if __name__ == "__main__":

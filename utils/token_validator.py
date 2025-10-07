@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logging = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 # Get this from user's preference or config
 RISK_THRESHOLD = 0.7  # Example threshold for risk score
 
@@ -149,7 +149,7 @@ class TokenValidator:
             )
             
         except Exception as e:
-            logging.error(f"Error getting token info: {e}")
+            logger.error(f"Error getting token info: {e}")
             return None
     
     async def check_liquidity(self, mint_address: str) -> Optional[LiquidityInfo]:
@@ -205,7 +205,7 @@ class TokenValidator:
             return None
 
         except Exception as e:
-            logging.error(f"Error checking liquidity: {e}")
+            logger.error(f"Error checking liquidity: {e}")
             return None
     
     async def check_honeypot(self, mint_address: str) -> Dict:
@@ -235,7 +235,7 @@ class TokenValidator:
                 
             return {"is_honeypot": False, "reason": "No honeypot characteristics detected"}  
         except Exception as e:
-            logging.error(f"Honeypot check error: {e}")
+            logger.error(f"Honeypot check error: {e}")
             return {"is_honeypot": True, "reason": "Failed to verify trading safety"}
 
     def simulate_swap(self, mint_address: str, amount_sol: float) -> Dict:
@@ -250,7 +250,7 @@ class TokenValidator:
         try:
             # Simulate buy
             buy_response = requests.get(self.jupiter_quote_api, params=params)
-            logging.info(f"Buy swap simulation response for {mint_address}: {buy_response.text}")
+            logger.info(f"Buy swap simulation response for {mint_address}: {buy_response.text}")
             if buy_response.status_code != 200:
                 return {"buy_success": False, "sell_success": False}
 
@@ -269,7 +269,7 @@ class TokenValidator:
             }
 
             sell_response = requests.get(self.jupiter_quote_api, params=sell_params)
-            logging.info(f"Sell swap simulation response for {mint_address}: {sell_response.text}")
+            logger.info(f"Sell swap simulation response for {mint_address}: {sell_response.text}")
             # Ensure that sell works out
             if sell_response.status_code != 200:
                 return {"buy_success": True, "sell_success": False}
@@ -277,7 +277,7 @@ class TokenValidator:
             # If both succeed, return success
             return {"buy_success": True,"sell_success": True}
         except Exception as e:
-            logging.error(f"Swap simulation error: {e}")
+            logger.error(f"Swap simulation error: {e}")
             return {"buy_success": False, "sell_success": False}
     
     def get_rugcheck_report_summary(self, mint_address:str) -> Dict:
@@ -307,7 +307,7 @@ class TokenValidator:
                 # TODO: Consider checking the percentage of liquidity locked to influence risk level
                 return {"risk": "low", "reason": "Low risk score from Rugcheck", "report": data}
         except Exception as e:
-            logging.error(f"Was unable to retrieve token report summary for {mint_address}, this is the error: {e}")
+            logger.error(f"Was unable to retrieve token report summary for {mint_address}, this is the error: {e}")
             return {"error": str(e)}
 
     def calculate_risk_score(self, validation_results: Dict) -> float:
@@ -365,7 +365,7 @@ class TokenValidator:
             metadata = response.json()
             return metadata
         except Exception as e:
-            logging.error(f"Metadata fetch error: {e}")
+            logger.error(f"Metadata fetch error: {e}")
             return {"name": "Unknown", "symbol": "UNK"}
         
     async def get_metaplex_metadata(self, mint_address: str) -> Dict:
@@ -384,18 +384,15 @@ class TokenValidator:
             metadata = await self.program.account["Metadata"].fetch(metadata_pda)
 
             #Logging
-            logging.info(f"Retrieved metadata for {mint_address}: {metadata}")
+            logger.info(f"Retrieved metadata for {mint_address}: {metadata}")
 
             return metadata
         except Exception as e:
-            logging.error(f"Metaplex metadata fetch error: {e}")
+            logger.error(f"Metaplex metadata fetch error: {e}")
             return {"name": "Unknown", "symbol": "UNK"}
 
 if __name__ == "__main__":
     import asyncio
-    import logging
-
-    logging.basicConfig(level=logging.INFO)
     print("Testing TokenValidator...")
     
     print("Initializing TokenValidator...")

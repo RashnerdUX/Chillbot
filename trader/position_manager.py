@@ -6,7 +6,7 @@ from trader.with_jupiter import JupiterTrader
 from wallet.wallet_manager import WalletManager
 from models.position_models import Position, PositionStatus, PriceUpdate
 
-logging = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 class PositionManager:
     def __init__(self):
         self.wallet = WalletManager()
@@ -40,7 +40,7 @@ class PositionManager:
             buy_result = await self.trader.buy_token(token_mint, position_size)
             buy_result_data = buy_result.get("data")
             if buy_result_data.get("status") != "Success":
-                logging.error(f"Failed to buy token {token_mint}: {buy_result.get('message')}")
+                logger.error(f"Failed to buy token {token_mint}: {buy_result.get('message')}")
                 return {"status": "Failed", "message": buy_result.get("message")}
 
             # Record the position
@@ -74,7 +74,7 @@ class PositionManager:
                     # 'tx_hash': buy_result['tx_hash']
                 }
         except Exception as e:
-            logging.error(f"Error adding position for {token_mint}: {e}")
+            logger.exception(f"Error adding position for {token_mint}")
             return {"status": "Failed", "message": str(e)}
 
     async def close_position(self, token_mint: str, reason:str, quantity: Decimal):
@@ -107,7 +107,7 @@ class PositionManager:
 
             # Check status of the sell
             if sell_result_data.get("status") != "Success":
-                logging.error(f"Failed to sell token {token_mint}: {sell_result.get('message')}")
+                logger.error(f"Failed to sell token {token_mint}: {sell_result.get('message')}")
                 return {"status": "Failed", "message": sell_result_data.get("message")}
 
             # Update the position once sell is successful
@@ -127,17 +127,25 @@ class PositionManager:
             }
 
         except KeyError:
-            logging.error(f"No active position found for token {token_mint}")
+            logger.exception(f"No active position found for token {token_mint}")
             return {"status": "Failed", "message": "No active position found"}
         except Exception as e:
-            logging.error(f"Error retrieving position for {token_mint}: {e}")
+            logger.exception(f"Error retrieving position for {token_mint}: {e}")
             return {"status": "Failed", "message": str(e)}
 
     def get_position(self, token_mint: str):
-        return self.positions.get(token_mint, None)
+        try:
+            position = self.positions.get(token_mint, None)
+        except Exception as e:
+            logger.exception("Error getting a position for {token_mint}")
+        return position
 
     def get_all_positions(self) -> dict:
-        return self.positions
+        try:
+            positions = self.positions
+        except Exception as e:
+            logger.exception("Error obtaining all the positions")
+        return positions
     
     def get_active_positions(self, token_mint:str) -> list[Position]:
         """
@@ -149,35 +157,41 @@ class PositionManager:
         Returns:
             list[Position]: A list of all positions for that token with 
         """
-        # NOTE: Load up positions from db and store in local memory once app starts up
-        if not len(self.positions) > 0:
-            return
-        
-        # Initialize an empty list to store the active positions
-        active_positions = []
-        
-        # NOTE: Once the db is part of the system, position will have ids and the key will be the id not the token mint
-        for key, position in enumerate(self.positions.values()):
-            if position.token_mint == token_mint:
-                active_positions.append(position)
+        try:
+            # NOTE: Load up positions from db and store in local memory once app starts up
+            if not len(self.positions) > 0:
+                return
+            
+            # Initialize an empty list to store the active positions
+            active_positions = []
+            
+            # NOTE: Once the db is part of the system, position will have ids and the key will be the id not the token mint
+            for key, position in enumerate(self.positions.values()):
+                if position.token_mint == token_mint:
+                    active_positions.append(position)
 
-        return active_positions
+            return active_positions
+        except Exception as e:
+            logger.exception(f"Error occured when getting the active positions for {token_mint}")
 
     async def calculate_position_size(self, requested_amount: Decimal) -> Decimal:
         """Calculate position size based on risk management rules"""
         # TODO: Do a more robust risk management strategy. E.g the user could set a specific sol amount or % of portfolio they want to risk per trade.
         # Get account balance
-        result = await self.wallet.get_balance()
-        total_balance = Decimal(str(result.get("account_balance", 0.0)))
-        print(f"Total Balance: {total_balance} and type: {type(total_balance)}")
+        try:
+            result = await self.wallet.get_balance()
+            total_balance = Decimal(str(result.get("account_balance", 0.0)))
+            print(f"Total Balance: {total_balance} and type: {type(total_balance)}")
+            
+            # Maximum 5% of portfolio per trade
+            max_position = total_balance * Decimal('0.05')
+            
+            # Maximum 2 SOL per trade for safety
+            max_sol = Decimal('2.0')
         
-        # Maximum 5% of portfolio per trade
-        max_position = total_balance * Decimal('0.05')
-        
-        # Maximum 2 SOL per trade for safety
-        max_sol = Decimal('2.0')
-        
-        return min(requested_amount, max_position, max_sol)
+            return min(requested_amount, max_position, max_sol)
+        except Exception as e:
+            logger.exception("Error occured when calculating the position size for the trade")
     
 
 if __name__ == "__main__":

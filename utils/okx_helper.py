@@ -106,10 +106,10 @@ async def access_okx_stream(token_ticker:str):
             logger.warning(f"WebSocket connection closed: {e.code} - {e.reason}")
         
         except websockets.exceptions.WebSocketException as e:
-            logger.error(f"WebSocket exception: {e}", exc_info=True)
+            logger.exception(f"WebSocket exception: {e}")
 
         except Exception as e:
-            logger.error(f"An unexpected error occured. {e}")
+            logger.exception(f"An unexpected error occured. {e}")
 
 def get_current_sol_price() -> Decimal:
     """

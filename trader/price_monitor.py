@@ -13,7 +13,7 @@ from models.position_models import PriceUpdate, Position, PositionStatus
 from trader.position_manager import PositionManager
 
 # TODO: Replace with the global logger class
-logging = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 class PriceMonitor:
     def __init__(self, positions_manager):
@@ -73,7 +73,7 @@ class PriceMonitor:
                         for index, token in enumerate(self.active_subscriptions):
                             pair_address = token.get('ammKey')
                             # For debugging purposes
-                            print(f"Subscribing to Solana stream for pair address: {pair_address}")
+                            logger.info(f"Subscribing to Solana stream for pair address: {pair_address}")
                             await websocket.send(json.dumps({
                                     "id": index + 1,
                                     "method": "swapSubscribe",
@@ -90,20 +90,20 @@ class PriceMonitor:
                         async for message in websocket:
                             try:
                                 # Debugging purposes
-                                print(f"Received Solana stream message: {message}")
+                                logger.info(f"Received Solana stream message: {message}")
                                 data = json.loads(message)
                                 asyncio.create_task(self.handle_price_update('solana_streaming', data))
                             except json.JSONDecodeError as e:
-                                print(f"An error occured when parsing the data")
+                                logger.exception(f"An error occured when parsing the data")
                             except Exception as e:
-                                print(f"An error occured. {e}")
+                                logger.exception(f"Error occured when parsing message from websocket")
             except websockets.exceptions.ConnectionClosedError as e:
                 # If the connection closes, retry the connection after 5 seconds
-                print(f"Connection closed: {e.code} - {e.reason}. Reconnecting in 5 seconds...")
+                logger.exception(f"Connection closed. Reconnecting in 5 seconds...")
                 await asyncio.sleep(5)
             except Exception as e:
                 # If any other error occurs, retry the connection after 5 seconds
-                print(f"An error occured: {e}")
+                logger.exception("Error occured when accessing the Websocket for Solana Streaming...")
                 await asyncio.sleep(5)
     
     async def handle_price_update(self, source: str, data: Dict):
@@ -142,18 +142,18 @@ class PriceMonitor:
                     await callback(price_update)
                     
         except Exception as e:
-            logging.error(f"Error handling price update: {e}")
+            logger.exception(f"Error handling price update")
     
     async def check_exit_conditions(self, price_update: PriceUpdate):
         """Check if any positions should be closed"""
 
-        logging.info("Checking the exit conditions")
+        logger.info("Checking the exit conditions...")
         positions: list[Position] = self.positions_manager.get_active_positions(
             token_mint=price_update.token_mint
         )
 
         if not positions.__len__ > 0:
-            logging.warning(f"There is no open position for {price_update.token_mint} to check for exit conditions")
+            logger.warning(f"There is no open position for {price_update.token_mint} to check for exit conditions")
             await self.stop_monitoring()
         
         for position in positions:
@@ -174,31 +174,37 @@ class PriceMonitor:
     
     async def execute_take_profit(self, position:Position, current_price:Decimal, roi:Decimal):
         """Execute take profit order"""
-        logging.info(f"Take profit triggered for {position.token_mint}: ROI {roi:.2f}%")
         
-        # Execute sell order
-        result = await self.positions_manager.close_position(
-            token_mint=position.token_mint,
-            reason=f"Take profit @ {current_price}",
-            quantity= position.token_amount, #Sell everything at TP
-        )
-        
-        if result['status'] == "success":
-            await self.notify_exit(position, "TAKE PROFIT", roi, result['tx_hash'])
+        try:
+            # Execute sell order
+            result = await self.positions_manager.close_position(
+                token_mint=position.token_mint,
+                reason=f"Take profit @ {current_price}",
+                quantity= position.token_amount, #Sell everything at TP
+            )
+            
+            if result['status'] == "success":
+                logger.info(f"Take profit triggered for {position.token_mint}: ROI {roi:.2f}%")
+                await self.notify_exit(position, "TAKE PROFIT", roi, result['tx_hash'])
+        except Exception as e:
+            logger.exception("Error occured when closing trade for Take Profit")
     
     async def execute_stop_loss(self, position:Position, current_price:Decimal, roi:Decimal):
         """Execute stop loss order"""
-        logging.warning(f"Stop loss triggered for {position.token_mint}: ROI {roi:.2f}%")
         
-        # Execute sell order immediately
-        result = await self.positions_manager.close_position(
-            token_mint=position.token_mint,
-            reason=f"Stop loss @ {current_price}",
-            quantity= position.token_amount, #Sell everything at SL
-        )
-        
-        if result['status'] == "success":
-            await self.notify_exit(position, "STOP LOSS", roi, result['tx_hash'])
+        try:
+            # Execute sell order immediately
+            result = await self.positions_manager.close_position(
+                token_mint=position.token_mint,
+                reason=f"Stop loss @ {current_price}",
+                quantity= position.token_amount, #Sell everything at SL
+            )
+            
+            if result['status'] == "success":
+                logger.info(f"Stop loss triggered for {position.token_mint}: ROI {roi:.2f}%")
+                await self.notify_exit(position, "STOP LOSS", roi, result['tx_hash'])
+        except Exception as e:
+            logger.exception("Error occured when closing trade for Stop Loss")
 
     async def notify_exit(self, position: Position, action:str, roi:Decimal, tx_hash:str):
         """
@@ -211,7 +217,7 @@ class PriceMonitor:
             tx_hash (str): _description_
         """
         # TODO: This would be used for notifying the user like a websocket
-        logging.info(f"The position for {position.token_mint} has been closed because of {action} and the ROI is {roi}. Here's the tx_id = {tx_hash}")
+        logger.info(f"The position for {position.token_mint} has been closed because of {action} and the ROI is {roi}. Here's the tx_id = {tx_hash}")
 
 
 if __name__ == "__main__":

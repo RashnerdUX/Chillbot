@@ -1,5 +1,10 @@
 import redis.asyncio as redis
 from typing import Optional
+import logging
+
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 class RedisManager:
     """Single Redis connection manager"""
@@ -13,17 +18,18 @@ class RedisManager:
             encoding="utf-8",
             decode_responses=True
         )
-        print("✓ Redis connected")
+        logger.info("✓ Redis connected")
     
     async def disconnect(self):
         """Close Redis connection"""
         if self.client:
             await self.client.close()
-            print("✓ Redis disconnected")
+            logger.info("✓ Redis disconnected")
     
     def get_client(self) -> redis.Redis:
         """Get Redis client instance"""
         if not self.client:
+            logger.critical("Redis not initialized. Connect ASAP")
             raise RuntimeError("Redis not initialized. Call connect() first.")
         return self.client
 
