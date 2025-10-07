@@ -1,5 +1,5 @@
 ### Extra Information for Python Logging
-Here's link for the explanation - (Click here)[https://g.co/gemini/share/ea25f3573d19]
+Here's link for the explanation - [Click here](https://g.co/gemini/share/ea25f3573d19)
 
 ## File Logging
 There is a way to avoid the files getting too large. Either of the following handlers are preferred

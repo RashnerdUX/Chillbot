@@ -120,7 +120,7 @@ class PriceMonitor:
 
         try:
             sol_price = Decimal(swap_data.get('quotePrice'))
-            usd_price = determine_usd_price(sol_price)
+            usd_price = await determine_usd_price(sol_price)
 
             price_update = PriceUpdate(
                 token_mint=swap_data.get("baseTokenMint"),

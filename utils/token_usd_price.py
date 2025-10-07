@@ -1,12 +1,13 @@
 from decimal import Decimal
 from redis import Redis
+from services.chillbot_redis import RedisManager, redis_manager
 import logging
 
 # TODO:Get the global logger and Redis client
 logger = logging.getLogger(__name__)
-redis_client = Redis()
+redis_client = redis_manager
 
-def determine_usd_price(sol_price: Decimal) -> Decimal:
+async def determine_usd_price(sol_price: Decimal) -> Decimal:
     """
     Convert the Sol price to a usd price. This helper function is useful for 
 
@@ -18,7 +19,7 @@ def determine_usd_price(sol_price: Decimal) -> Decimal:
     """
     try:
         # First retrieve the solana price in cache
-        current_solana_price = redis_client.get("SOLANA_PRICE")
+        current_solana_price = await redis_client.get(RedisManager.SOL_PRICE_KEY)
 
         # Check if it is in cache
         if current_solana_price is None:

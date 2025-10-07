@@ -1,5 +1,6 @@
 from okx.websocket.WsPublicAsync import WsPublicAsync
 import logging
+from services.chillbot_redis import redis_manager, RedisManager
 from redis import Redis
 import websockets
 import json
@@ -7,13 +8,8 @@ from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
-# Initialize the Redis client and use the same
-# TODO: Use the global Redis manager
-redis_client = Redis()
-# TODO:Set a global class to keep the cache keys so I don't make mistakes
-# Take note - Solana price is stored as string as all things are stored in cache
-SOL_PRICE_KEY = "SOLANA_PRICE"
-SOL_PRICE_EXPIRY = 30 #Clear the cache after 30 secs
+# Initialize the Redis client
+redis_client: Redis = redis_manager
 
 
 def extract_token_price_from_okx_stream(data: dict):
@@ -34,8 +30,8 @@ def extract_token_price_from_okx_stream(data: dict):
 
             # Once the data is gotten, store in the Global Redis cache
             redis_client.setex(
-                SOL_PRICE_KEY,
-                SOL_PRICE_EXPIRY,
+                RedisManager.SOL_PRICE_KEY,
+                RedisManager.SOL_PRICE_EXPIRY,
                 str(price)
             )
             logger.info(f"Updated SOL/USD price in Redis: ${price}")
@@ -111,7 +107,7 @@ async def access_okx_stream(token_ticker:str):
         except Exception as e:
             logger.exception(f"An unexpected error occured. {e}")
 
-def get_current_sol_price() -> Decimal:
+async def get_current_sol_price() -> Decimal:
     """
     Get the current SOL/USD price from Redis cache.
     
@@ -121,7 +117,7 @@ def get_current_sol_price() -> Decimal:
     Raises:
         ValueError: If price is not available in cache
     """
-    price = redis_client.get(SOL_PRICE_KEY)
+    price = await redis_client.get(RedisManager.SOL_PRICE_KEY)
     if price is None:
         raise ValueError("SOL/USD price not available in cache")
     return Decimal(price)

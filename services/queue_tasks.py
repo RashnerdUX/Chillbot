@@ -4,16 +4,15 @@ from decimal import Decimal
 from utils.token_validator import TokenValidator
 import asyncio
 import logging
-from redis import Redis
+from chillbot_redis import redis_manager, RedisManager
 
 from utils.okx_helper import access_okx_stream
 
-# TODO: Replace with the Global logging class
+# Initialize the logger
 logger = logging.getLogger(__name__)
 
 # Initialize the Redis client and use the same
-# TODO: Use the global Redis manager
-redis_client = Redis()
+redis_client = redis_manager
 # The key for solana's price in cache is SOLANA_PRICE
 
 
