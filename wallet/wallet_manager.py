@@ -32,6 +32,7 @@ class WalletManager:
         # For testing, I'll use a devnet URL and set the current wallet
         # TODO: Remember to remove the hardcoded values before deploying to production
         self.devnet_rpc_url = "https://api.devnet.solana.com"
+        self.helium_rpc_url = f"https://mainnet.helius-rpc.com/?api-key={os.getenv('HELIUM_API_KEY')}"
         self._async_client = None
         # This is used to represent the wallet in the application
         self.wallet_name = "Test Wallet"
@@ -49,7 +50,7 @@ class WalletManager:
         self.user_password = "PythonRocks!"
 
     async def __aenter__(self):
-        self._async_client = AsyncClient(self.rpc_url)
+        self._async_client = AsyncClient(self.helium_rpc_url)
         logger.info("Async client initialized successfully")
         return self
 
@@ -191,10 +192,10 @@ class WalletManager:
             # Get account balance  
             balance = await self._async_client.get_balance(account_pubkey)
 
-            print(f"Account: {account_pubkey}")
-            print(f"Balance: {balance.value} lamports")
-            print(f"Balance: {balance.value / 1_000_000_000} SOL")
-            
+            logger.debug(f"Account: {account_pubkey}")
+            logger.debug(f"Balance: {balance.value} lamports")
+            logger.debug(f"Balance: {balance.value / 1_000_000_000} SOL")
+
             logger.info(f"Successfully retrieved balance for {self.wallet_address}")
             return {"account_balance": balance.value / 1_000_000_000}
         except Exception as e:
@@ -218,14 +219,14 @@ class WalletManager:
             for token_account in token_accounts.value:
                 token_data = ACCOUNT_LAYOUT.parse(token_account.account.data)
                 mint_base58 = base58.b58encode(token_data.mint).decode('utf-8')
-                print(f"Pubkey: {token_account.pubkey}")
-                print(f"Owner: {token_account.account.owner}")
-                print(f"Lamports: {token_account.account.lamports}")
-                print(f"Mint: {token_data.mint}")
-                print(f"Token Mint: {mint_base58}")
-                print(f"Balance: {token_data.amount / 10**6}")
-                print(f"Data Length: {len(token_account.account.data)} bytes")
-                print("=" * 50)
+                logger.debug(f"Pubkey: {token_account.pubkey}")
+                logger.debug(f"Owner: {token_account.account.owner}")
+                logger.debug(f"Lamports: {token_account.account.lamports}")
+                logger.debug(f"Mint: {token_data.mint}")
+                logger.debug(f"Token Mint: {mint_base58}")
+                logger.debug(f"Balance: {token_data.amount / 10**6}")
+                logger.debug(f"Data Length: {len(token_account.account.data)} bytes")
+                logger.debug("=" * 50)
 
                 token = SolanaToken(
                     token_address=mint_base58,
@@ -329,10 +330,10 @@ class WalletManager:
             # 4. Create transaction
             transaction = VersionedTransaction(message, [Keypair.from_base58_string(self.private_key)])
 
-            print(f"Sender: {self.wallet_address}")
-            print(f"Recipient: {recipient_address}")
-            print(f"Transfer Amount: {amount / LAMPORTS_PER_SOL} SOL")
-            print(f"Transaction created successfully")
+            logger.debug(f"Sender: {self.wallet_address}")
+            logger.debug(f"Recipient: {recipient_address}")
+            logger.debug(f"Transfer Amount: {amount / LAMPORTS_PER_SOL} SOL")
+            logger.debug(f"Transaction created successfully")
 
             # 5. Send the transaction and confirm the transaction
             signature = await self._async_client.send_transaction(transaction)
@@ -411,11 +412,11 @@ class WalletManager:
             # Create transaction
             transaction = VersionedTransaction(message, [sender])
 
-            print(f"Sender: {sender.pubkey()}")
-            print(f"Recipient: {recipient.pubkey()}")
-            print(f"Token Mint: {token_mint}")
-            print(f"Transfer Amount: {amount / (10 ** decimals)} tokens")
-            print(f"Transaction created successfully")
+            logger.debug(f"Sender: {sender.pubkey()}")
+            logger.debug(f"Recipient: {recipient}")
+            logger.debug(f"Token Mint: {token_mint}")
+            logger.debug(f"Transfer Amount: {amount / (10 ** decimals)} tokens")
+            logger.debug(f"Transaction created successfully")
 
             # Send the transaction and confirm the transaction
             signature = await self._async_client.send_transaction(transaction)
@@ -447,17 +448,18 @@ class WalletManager:
                 [bytes(owner_pubkey), bytes(TOKEN_PROGRAM_ID), bytes(mint)],
                 ASSOCIATED_TOKEN_PROGRAM_ID
             )[0]
-            print(f"Here's the retrieved ATA for {mint} on {owner_pubkey} account: {ata}")
+            logger.info(f"Here's the retrieved ATA for {mint} on {owner_pubkey} account: {ata}")
             
             # Check if ATA exists
-            print(f"Retrieving token accounts by owner {owner_pubkey}...")
+            logger.debug(f"Retrieving token accounts by owner {owner_pubkey}...")
             response = await self._async_client.get_token_accounts_by_owner(
                 owner_pubkey,
                 TokenAccountOpts(program_id=TOKEN_PROGRAM_ID, mint=mint)
             )
-            print(f"Here's the response for token accounts by owner {owner_pubkey}: {response.value}")
+            logger.info(f"Here's the response for token accounts by owner {owner_pubkey}: {response.value}")
             for account in response.value:
                 if str(account.pubkey) == str(ata):
+                    print(f"ATA {ata} already exists for mint {mint} and owner {owner_pubkey}")
                     return ata
             
             # Create ATA if it doesn't exist
@@ -557,16 +559,7 @@ if __name__ == "__main__":
             try:
                 print(f"Wallet initialized with address: {wm.wallet_address}")
                 print("Getting wallet balance...")
-                wallet_info = await wm.get_balance()
-
-                print("Getting wallet tokens...")
-                ata_wif = await wm.get_or_create_ata(owner_pubkey=Pubkey.from_string(wm.wallet_address), mint=Pubkey.from_string(wif_mint_address), payer=Keypair.from_base58_string(wm.private_key))
-
-                print(wallet_info)
-                print(f"ATA for WIF: {ata_wif}")
-                print(f"Getting decimals for UPT token mint: {uprock_mint_address}")
-                uprock_decimals = await wm.getDecimals(mint_address=uprock_mint_address)
-                print(f"Decimals for UPT token mint: {uprock_decimals}")
+                #wallet_info = await wm.get_balance()
 
                 print("Trying to send 2 UPT to compromised wallet...")
                 tx_info = await wm.send_token(
